@@ -359,9 +359,9 @@ def step_1_students():
             default_text = "\n".join([f"{s['번호']} {s['이름']}" for s in st.session_state.students])
         
         text_input = st.text_area(
-            "학생 명단을 입력하세요 (예: 1 김민준\\n2 박서연)",
+            "학생 명단을 입력하세요 (예: 1 김민준  2 박서연)",
             value=default_text,
-            placeholder="1 김민준\n2 박서연\n3 이도윤",
+            placeholder="1 박성진\n2 강영현\n3 김원필\n4 윤도운",
             height=150,
             key="student_text"
         )
