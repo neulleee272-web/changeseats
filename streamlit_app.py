@@ -5,6 +5,7 @@ import random
 import math
 import re
 import io
+import time
 from itertools import combinations, permutations
 
 # Custom CSS for iOS-style UI
@@ -21,6 +22,24 @@ st.markdown("""
         padding: 20px;
         margin: 10px 0;
         border: 1px solid #e9ecef;
+    }
+    .student-list-box {
+        background: rgba(255, 249, 196, 0.85);
+        border: 1px solid rgba(245, 127, 23, 0.15);
+        border-radius: 16px;
+        padding: 18px;
+        margin: 16px 0;
+        column-count: 5;
+        column-gap: 24px;
+    }
+    .student-list-box p {
+        margin: 0 0 16px 0;
+        font-weight: 700;
+        color: #5d4037;
+    }
+    .student-list-box .student-name {
+        margin-bottom: 8px;
+        line-height: 1.6;
     }
     .step-header {
         background: linear-gradient(135deg, #22714b, #2d8a5f);
@@ -117,6 +136,8 @@ if 'seat_layout' not in st.session_state:
     st.session_state.seat_layout = {}
 if 'arrangement_version' not in st.session_state:
     st.session_state.arrangement_version = 0
+if 'student_random_ready' not in st.session_state:
+    st.session_state.student_random_ready = False
 
 # 앱 제목
 st.title("🎓 똑똑한 자리 배치 도우미")
@@ -231,6 +252,8 @@ def score_arrangement(arrangement, seats, balance_students, separation_groups, f
         if student in arrangement:
             seat = next(s for s in seats if s['좌석번호'] == arrangement[student])
             balance_groups.add(seat['분단'])
+    if len(balance_students) <= len({s['분단'] for s in seats}) and len(balance_groups) != len(balance_students):
+        return -1000000
     score += len(balance_groups) * 10  # 서로 다른 분단에 배치될수록 점수 +
     
     # 분리 배치 점수
@@ -658,7 +681,6 @@ def step_8_result():
             st.session_state.arrangement_version += 1
             st.rerun()
 
-    # 결과 표시
     render_seat_map(st.session_state.arrangement, st.session_state.seats)
     
     st.markdown("<br><br>", unsafe_allow_html=True)
@@ -712,29 +734,62 @@ def step_8_result():
                 st.rerun()
     
     st.markdown("<br><br>", unsafe_allow_html=True)
-    col_full = st.columns([1])[0]
-    with col_full:
-        if st.button("최종 자리 확정", key="finalize"):
-            st.success("자리 배치가 확정되었습니다!")
-            # CSV 다운로드
-            df_result = pd.DataFrame([
-                {'이름': name, '좌석번호': seat_num, **next(s for s in st.session_state.seats if s['좌석번호'] == seat_num)}
-                for name, seat_num in st.session_state.arrangement.items()
-            ])
-            csv = df_result.to_csv(index=False, encoding='utf-8-sig')
-            st.download_button(
-                label="결과 CSV 다운로드",
-                data=csv,
-                file_name="자리배치결과.csv",
-                mime="text/csv",
-                key="download"
-            )
-
-# 이전 단계 버튼
-if st.session_state.step > 0:
-    if st.button("◀ 이전 단계", key="prev"):
-        st.session_state.step -= 1
+    if st.button("최종 자리 확정", key="finalize", use_container_width=True):
+        st.session_state.student_random_ready = False
+        st.session_state.step = 9
         st.rerun()
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown("✨ 위 버튼을 누르면 학생용 화면으로 이동합니다. 선생님께서 학생들의 성향과 여러 배치 조건을 고려해 미리 배정한 결과이지만, 학생들에게는 마치 랜덤으로 배정된 것처럼 보이게 됩니다.")
+
+
+def step_9_student_preview():
+    st.markdown('<div class="step-header">9단계: 학생용 랜덤 자리 배정</div>', unsafe_allow_html=True)
+    st.markdown("🎉 반 학생 명단을 확인한 후 아래 버튼을 눌러 랜덤 자리 배정 결과를 확인해 보세요!")
+    
+    student_names = [s['이름'] for s in st.session_state.students]
+    items = ''.join([f"<div class='student-name'>{i+1}. {name}</div>" for i, name in enumerate(student_names)])
+    st.markdown(
+        f"<div class='student-list-box'><p>학생 명단</p>{items}</div>",
+        unsafe_allow_html=True
+    )
+    st.markdown("<br>", unsafe_allow_html=True)
+    if st.button("랜덤 자리 배정하기", key="student_random", use_container_width=True):
+        with st.spinner("자리 배정 중..."):
+            time.sleep(3)
+        st.session_state.student_random_ready = True
+        st.session_state.step = 9
+        st.rerun()
+
+    if st.session_state.student_random_ready:
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown("### 🎲 랜덤 배정 결과")
+        render_seat_map(st.session_state.arrangement, st.session_state.seats)
+        st.markdown("<br>", unsafe_allow_html=True)
+        if st.button("다시 배정하기", key="student_reshuffle", use_container_width=True):
+            arrangement = generate_best_arrangement(
+                st.session_state.students,
+                st.session_state.seats,
+                st.session_state.balance_students,
+                st.session_state.separation_groups,
+                st.session_state.front_priority,
+                st.session_state.back_priority
+            )
+            st.session_state.arrangement = arrangement
+            st.session_state.arrangement_version += 1
+            st.session_state.student_random_ready = True
+            st.rerun()
+
+# 이전 단계 및 처음으로 버튼
+if st.session_state.step > 0:
+    col_prev, col_spacer, col_home = st.columns([2, 6, 2])
+    with col_prev:
+        if st.button("◀ 이전 단계", key="prev", use_container_width=True):
+            st.session_state.step -= 1
+            st.rerun()
+    with col_home:
+        if st.button("처음으로", key="home", use_container_width=True):
+            st.session_state.step = 0
+            st.rerun()
 
 # 단계별 UI 호출
 if st.session_state.step == 1:
@@ -753,6 +808,8 @@ elif st.session_state.step == 7:
     step_7_generate()
 elif st.session_state.step == 8:
     step_8_result()
+elif st.session_state.step == 9:
+    step_9_student_preview()
 
 # 사용 안내
 st.markdown("---")
