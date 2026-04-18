@@ -203,30 +203,83 @@ def load_csv_file(uploaded_file):
         st.error(f"CSV 파일 로드 중 오류: {str(e)}")
         return pd.DataFrame()
 
+
+def create_student_template_csv():
+    """학생 명단 업로드를 위한 CSV 예시 파일 생성"""
+    template_df = pd.DataFrame({
+        '번호': [1, 2, 3, 4],
+        '이름': ['김민준', '박서연', '김원필', '윤도운']
+    })
+    csv_bytes = template_df.to_csv(index=False, encoding='cp949').encode('cp949', errors='replace')
+    return csv_bytes
+
+
+def sort_seat_key(seat):
+    return (seat['분단'], seat['행'], seat['열'])
+
+
+def assign_priority_students(seats, front_priority, back_priority):
+    """앞줄/뒷줄 우선 학생을 가능한 한 전방/후방에 고정 배치"""
+    seat_by_id = {seat['좌석번호']: seat for seat in seats}
+    available = set(seat_by_id.keys())
+    arrangement = {}
+
+    front_seats = [seat for seat in seats if seat['앞줄']]
+    non_back_seats = [seat for seat in seats if not seat['뒷줄']]
+    front_allowed = sorted(front_seats, key=sort_seat_key) + sorted(
+        [seat for seat in non_back_seats if seat not in front_seats],
+        key=sort_seat_key
+    )
+
+    for student in front_priority:
+        if not front_allowed:
+            break
+        seat = front_allowed.pop(0)
+        arrangement[student] = seat['좌석번호']
+        available.remove(seat['좌석번호'])
+        front_allowed = [s for s in front_allowed if s['좌석번호'] in available]
+
+    back_seats = [seat for seat in seats if seat['뒷줄']]
+    non_front_seats = [seat for seat in seats if not seat['앞줄']]
+    back_allowed = sorted(back_seats, key=lambda seat: (-seat['행'], seat['분단'])) + sorted(
+        [seat for seat in non_front_seats if seat not in back_seats],
+        key=lambda seat: (-seat['행'], seat['분단'])
+    )
+
+    for student in back_priority:
+        if not back_allowed:
+            break
+        seat = back_allowed.pop(0)
+        arrangement[student] = seat['좌석번호']
+        available.remove(seat['좌석번호'])
+        back_allowed = [s for s in back_allowed if s['좌석번호'] in available]
+
+    return arrangement, available
+
+
 def build_seat_layout(num_groups, seats_per_group):
     """좌석 구조 생성"""
     seats = []
     group_x = {i: i*10 for i in range(num_groups)}  # 분단 간 거리
     
     for group in range(num_groups):
-        rows = math.ceil(seats_per_group[group] / 2)  # 좌우 2열 가정
-        seat_count = 0
+        rows = seats_per_group[group]  # 한 분단당 한 열로 세로 배치
         for row in range(rows):
-            for col in range(2):
-                if seat_count >= seats_per_group[group]:
-                    break
-                seat = {
-                    '분단': group + 1,
-                    '행': row,
-                    '열': col,
-                    'x': group_x[group] + col * 2,
-                    'y': row,
-                    '앞줄': row < 2,  # 앞 2줄
-                    '뒷줄': row >= 3,  # 4번째 줄부터
-                    '좌석번호': len(seats) + 1
-                }
-                seats.append(seat)
-                seat_count += 1
+            if rows <= 3:
+                back_seat = row == rows - 1
+            else:
+                back_seat = 3 <= row <= 4
+            seat = {
+                '분단': group + 1,
+                '행': row,
+                '열': 0,
+                'x': group_x[group],
+                'y': row,
+                '앞줄': row < 2,
+                '뒷줄': back_seat,
+                '좌석번호': len(seats) + 1
+            }
+            seats.append(seat)
     return seats
 
 def calculate_distance(seat1, seat2):
@@ -235,11 +288,11 @@ def calculate_distance(seat1, seat2):
 
 
 def is_preferred_front_seat(seat):
-    return seat['행'] in [0, 1]
+    return seat['앞줄']
 
 
 def is_preferred_back_seat(seat):
-    return seat['행'] in [3, 4]
+    return seat['뒷줄']
 
 
 def score_arrangement(arrangement, seats, balance_students, separation_groups, front_priority, back_priority):
@@ -282,7 +335,7 @@ def score_arrangement(arrangement, seats, balance_students, separation_groups, f
     
     return score
 
-def generate_best_arrangement(students, seats, balance_students, separation_groups, front_priority, back_priority, iterations=1000):
+def generate_best_arrangement(students, seats, balance_students, separation_groups, front_priority, back_priority, iterations=2000):
     """최적 배치 생성"""
     best_score = -1e9
     best_arrangement = {}
@@ -290,15 +343,18 @@ def generate_best_arrangement(students, seats, balance_students, separation_grou
     invalid_best_arrangement = {}
     
     student_names = [s['이름'] for s in students]
-    
+    fixed_arrangement, available_seats = assign_priority_students(seats, front_priority, back_priority)
+    remaining_students = [name for name in student_names if name not in fixed_arrangement]
+    available_seat_ids = list(available_seats)
+
+    if not available_seat_ids:
+        return fixed_arrangement
+
     for _ in range(iterations):
-        # 랜덤 배치 생성
-        shuffled_seats = random.sample(range(1, len(seats)+1), len(student_names))
-        arrangement = dict(zip(student_names, shuffled_seats))
-        
-        # 점수 계산
+        shuffled = random.sample(available_seat_ids, len(available_seat_ids))
+        arrangement = {**fixed_arrangement, **dict(zip(remaining_students, shuffled))}
+
         score = score_arrangement(arrangement, seats, balance_students, separation_groups, front_priority, back_priority)
-        
         if score < -999000:
             if score > invalid_best_score:
                 invalid_best_score = score
@@ -307,12 +363,12 @@ def generate_best_arrangement(students, seats, balance_students, separation_grou
         if score > best_score:
             best_score = score
             best_arrangement = arrangement.copy()
-    
+
     if best_arrangement:
         return best_arrangement
     if invalid_best_arrangement:
         return invalid_best_arrangement
-    return dict(zip(student_names, random.sample(range(1, len(seats)+1), len(student_names))))
+    return {**fixed_arrangement, **dict(zip(remaining_students, random.sample(available_seat_ids, len(available_seat_ids))))}
 
 def render_seat_map(arrangement, seats):
     """좌석 배치 시각화"""
@@ -376,6 +432,14 @@ def step_1_students():
                     st.rerun()
     
     else:  # CSV 업로드
+        st.markdown("CSV 양식 파일을 다운로드하고, 아래 예시처럼 `번호`와 `이름`을 입력한 다음 업로드해 주세요.")
+        csv_bytes = create_student_template_csv()
+        st.download_button(
+            "CSV 예시 양식 다운로드",
+            data=csv_bytes,
+            file_name="학생_명단_예시.csv",
+            mime="text/csv"
+        )
         uploaded_file = st.file_uploader("CSV 파일을 업로드하세요", type=['csv'], key="student_csv")
         if uploaded_file:
             df = load_csv_file(uploaded_file)
@@ -387,7 +451,7 @@ def step_1_students():
                     st.session_state.step = 2
                     st.rerun()
     
-    st.markdown("💡 **팁**: 한글(.hwp) 파일은 표를 복사해 텍스트로 붙여넣거나 CSV로 저장해 업로드해 주세요.")
+    st.markdown("💡 **팁**: 한글(.hwp) 파일은 명렬표를 복사해 텍스트로 붙여넣거나 CSV로 저장해 업로드해 주세요.")
 
 def step_2_seats():
     st.markdown('<div class="step-header">2단계: 자리 구조 입력</div>', unsafe_allow_html=True)
@@ -485,15 +549,14 @@ def step_3_balance():
 
 def step_4_separation():
     st.markdown('<div class="step-header">4단계: 분리 배치 학생 세트</div>', unsafe_allow_html=True)
-    st.markdown("무슨 일이 있어도 같은 분단에 배치하지 말아야 할 학생 세트를 입력하세요.")
-    st.markdown("✨ 입력된 학생들은 반드시 다른 분단에 배치되며, 가능한 서로 가장 먼 자리로 배치됩니다.")
+    st.markdown("**✨ 같은 분단에 배치하지 말아야 할 학생 세트**를 입력하세요.")
+    st.markdown(" 입력된 학생들은 서로 다른 분단에 배치되며, 가능한 서로 가장 먼 자리로 배치됩니다.")
     st.markdown("📝 **입력 예시:**")
     st.markdown("- 한 줄에 한 세트씩 입력")
     st.markdown("- 세트 설정은 **띄어쓰기, 쉼표, 하이픈(-)** 중 아무거나 사용해서 설정 가능")
-    st.markdown("- 예시 1: 박성진 강영현")
-    st.markdown("- 예시 2: 김원필, 윤도운")
-    st.markdown("- 예시 3: 박성진-윤도운")
-    st.markdown("- 예: a학생-b학생 입력 시 a학생은 1분단 1번째 자리, b학생은 5분단 4번째 자리에 배치될 수 있도록 합니다.")
+    st.markdown("- 예시 1: 박성진 강영현 (띄어쓰기)")
+    st.markdown("- 예시 2: 김원필, 윤도운 (쉼표)")
+    st.markdown("- 예시 3: 박성진 - 윤도운 (하이픈)")
     
     # 이전 입력값이 있으면 불러오기
     default_text = ""
@@ -554,8 +617,8 @@ def step_4_separation():
 
 def step_5_front_priority():
     st.markdown('<div class="step-header">5단계: 앞줄 우선 학생</div>', unsafe_allow_html=True)
-    st.markdown("👀 웬만하면 각 분단의 1번째~2번째 줄 이내에 배치하면 좋을 학생들을 입력하세요. (예: 시력이 나쁜 학생, 키가 작은 학생 등)")
-    st.markdown("✨ 입력된 학생은 3번째, 4번째, 5번째 줄로 배치되지 않도록 최대한 앞쪽으로 배치합니다.")
+    st.markdown("👩‍🏫 각 분단의 **1번째~2번째 줄 이내에 배치하면 좋을 학생들**을 입력하세요. (예: 시력이 나쁜 학생, 키가 작은 학생 등)")
+    st.markdown("✨ 입력된 학생은 최대한 앞쪽으로 배치합니다.")
     
     # 이전 입력값이 있으면 불러오기
     default_text = ""
@@ -595,8 +658,8 @@ def step_5_front_priority():
 
 def step_6_back_priority():
     st.markdown('<div class="step-header">6단계: 뒷줄 우선 학생</div>', unsafe_allow_html=True)
-    st.markdown("👍 웬만하면 각 분단의 4번째~5번째 줄에 배치하면 좋을 학생들을 입력하세요. (예: 키가 큰 학생, 선생님으로부터 멀리 떨어져 있게 하고 싶은 학생 등)")
-    st.markdown("✨ 입력된 학생은 1번째, 2번째, 3번째 줄로 배치되지 않도록 최대한 뒤쪽으로 배치합니다.")
+    st.markdown("👩‍🏫 각 분단의 **4번째~5번째 줄에 배치하면 좋을 학생들**을 입력하세요. (예: 키가 큰 학생, 선생님으로부터 멀리 떨어져 있게 하고 싶은 학생 등)")
+    st.markdown("✨ 입력된 학생은 최대한 뒤쪽 자리에 배치합니다.")
     
     # 이전 입력값이 있으면 불러오기
     default_text = ""
@@ -636,7 +699,7 @@ def step_6_back_priority():
 
 def step_7_generate():
     st.markdown('<div class="step-header">7단계: 자리 배정 실행</div>', unsafe_allow_html=True)
-    st.markdown("입력하신 조건을 반영하여 최적의 자리 배치를 생성합니다.")
+    st.markdown("🫡 입력하신 조건을 반영하여 최적의 자리 배치를 생성합니다.")
     
     # 조건 요약
     st.markdown("📋 **입력된 조건 요약:**")
