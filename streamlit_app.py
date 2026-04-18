@@ -151,7 +151,7 @@ if 'student_random_ready' not in st.session_state:
 
 # 앱 제목
 st.title("🎓 똑똑한 자리 배치 도우미")
-st.markdown("초등학교 학급 자리 바꾸기를 쉽고 스마트하게!")
+st.markdown("학급 자리 바꾸기를 쉽고 스마트하게!")
 st.divider()
 
 if st.session_state.step == 0:
@@ -891,4 +891,4 @@ elif st.session_state.step == 9:
 
 # 사용 안내
 st.markdown("---")
-st.markdown("**사용 안내:** 이 앱은 초등학교 학급 자리 바꾸기를 돕기 위해 만들어졌습니다. 단계별로 입력하시면 최적의 배치를 자동 생성해 드려요. 결과가 마음에 들지 않으면 직접 수정할 수도 있어요!")
+st.markdown("**✔️사용 안내:** 이 앱은 학급 자리 바꾸기를 돕기 위해 만들어졌습니다. 단계별로 입력하시면 최적의 배치를 자동 생성해 드려요. 결과가 마음에 들지 않으면 직접 수정할 수도 있어요!")
