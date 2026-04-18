@@ -520,7 +520,7 @@ def step_2_seats():
 
 def step_3_balance():
     st.markdown('<div class="step-header">3단계: 모둠별 리더 후보 학생</div>', unsafe_allow_html=True)
-    st.markdown("👥 각 모둠별로 1명씩 들어가면 좋을 학생들을 입력하세요. (예: 모둠활동 시 리더 역할을 할 학생, 성적 우수 학생 등)")
+    st.markdown("👥 **각 모둠별로 1명씩 들어가면 좋을 학생들**을 입력하세요. (예: 모둠활동 시 리더 역할을 할 학생, 성적 우수 학생 등)")
     st.markdown("✨ 이 학생들은 가능한 서로 다른 분단에 분산 배치됩니다.")
     
     # 이전 입력값이 있으면 불러오기
