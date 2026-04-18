@@ -56,6 +56,16 @@ st.markdown("""
         border-radius: 8px;
         font-weight: 500;
     }
+    .st-key-finalize button {
+        background-color: #fff9c4 !important;
+        border-color: #ffecb3 !important;
+        color: #000 !important;
+        border-radius: 8px !important;
+        font-weight: 600 !important;
+    }
+    .st-key-finalize button:hover {
+        background-color: #fff59d !important;
+    }
     .btn-secondary {
         background-color: #6c757d !important;
         border-color: #6c757d !important;
@@ -224,35 +234,39 @@ def assign_priority_students(seats, front_priority, back_priority):
     available = set(seat_by_id.keys())
     arrangement = {}
 
-    front_seats = [seat for seat in seats if seat['앞줄']]
-    non_back_seats = [seat for seat in seats if not seat['뒷줄']]
-    front_allowed = sorted(front_seats, key=sort_seat_key) + sorted(
-        [seat for seat in non_back_seats if seat not in front_seats],
-        key=sort_seat_key
-    )
+    front_priority = [s for s in front_priority if s]
+    back_priority = [s for s in back_priority if s]
+    random.shuffle(front_priority)
+    random.shuffle(back_priority)
 
-    for student in front_priority:
-        if not front_allowed:
-            break
-        seat = front_allowed.pop(0)
+    front_seats = [seat for seat in seats if seat['앞줄']]
+    non_back_seats = [seat for seat in seats if not seat['뒷줄'] and seat not in front_seats]
+    selected_front = []
+    if len(front_priority) <= len(front_seats):
+        selected_front = random.sample(front_seats, len(front_priority))
+    else:
+        selected_front = front_seats.copy()
+        needed = len(front_priority) - len(front_seats)
+        selected_front += random.sample(non_back_seats, min(needed, len(non_back_seats)))
+
+    for student, seat in zip(front_priority, selected_front):
         arrangement[student] = seat['좌석번호']
         available.remove(seat['좌석번호'])
-        front_allowed = [s for s in front_allowed if s['좌석번호'] in available]
 
     back_seats = [seat for seat in seats if seat['뒷줄']]
-    non_front_seats = [seat for seat in seats if not seat['앞줄']]
-    back_allowed = sorted(back_seats, key=lambda seat: (-seat['행'], seat['분단'])) + sorted(
-        [seat for seat in non_front_seats if seat not in back_seats],
-        key=lambda seat: (-seat['행'], seat['분단'])
-    )
+    non_front_seats = [seat for seat in seats if not seat['앞줄'] and seat not in back_seats]
+    selected_back = []
+    if len(back_priority) <= len(back_seats):
+        selected_back = random.sample(back_seats, len(back_priority))
+    else:
+        selected_back = back_seats.copy()
+        needed = len(back_priority) - len(back_seats)
+        selected_back += random.sample(non_front_seats, min(needed, len(non_front_seats)))
 
-    for student in back_priority:
-        if not back_allowed:
-            break
-        seat = back_allowed.pop(0)
-        arrangement[student] = seat['좌석번호']
-        available.remove(seat['좌석번호'])
-        back_allowed = [s for s in back_allowed if s['좌석번호'] in available]
+    for student, seat in zip(back_priority, selected_back):
+        if seat['좌석번호'] in available:
+            arrangement[student] = seat['좌석번호']
+            available.remove(seat['좌석번호'])
 
     return arrangement, available
 
@@ -319,19 +333,21 @@ def score_arrangement(arrangement, seats, balance_students, separation_groups, f
             distances = [calculate_distance(s1, s2) for s1, s2 in combinations(group_seats, 2)]
             score += sum(distances) * 6  # 거리 합 최대화
     
-    # 앞줄 우선 점수
+    # 앞줄 우선 필수 조건
     for student in front_priority:
         if student in arrangement:
             seat = next(s for s in seats if s['좌석번호'] == arrangement[student])
-            if is_preferred_front_seat(seat):
-                score += 10
+            if not is_preferred_front_seat(seat):
+                return -1000000
+            score += 10
     
-    # 뒷줄 우선 점수
+    # 뒷줄 우선 필수 조건
     for student in back_priority:
         if student in arrangement:
             seat = next(s for s in seats if s['좌석번호'] == arrangement[student])
-            if is_preferred_back_seat(seat):
-                score += 10
+            if not is_preferred_back_seat(seat):
+                return -1000000
+            score += 10
     
     return score
 
@@ -801,8 +817,7 @@ def step_8_result():
         st.session_state.student_random_ready = False
         st.session_state.step = 9
         st.rerun()
-    st.markdown("<br>", unsafe_allow_html=True)
-    st.markdown("✨ 위 버튼을 누르면 학생용 화면으로 이동합니다. 선생님께서 학생들의 성향과 여러 배치 조건을 고려해 미리 배정한 결과이지만, 학생들에게는 마치 랜덤으로 배정된 것처럼 보이게 됩니다.")
+    st.markdown("**✨ 위 버튼을 누르면 학생용 화면으로 이동합니다. 선생님께서 학생들의 성향과 여러 배치 조건을 고려해 미리 배정한 결과이지만, 학생들에게는 마치 랜덤으로 배정된 것처럼 보이게 됩니다.**")
 
 
 def step_9_student_preview():
@@ -812,7 +827,7 @@ def step_9_student_preview():
     student_names = [s['이름'] for s in st.session_state.students]
     items = ''.join([f"<div class='student-name'>{i+1}. {name}</div>" for i, name in enumerate(student_names)])
     st.markdown(
-        f"<div class='student-list-box'><p>학생 명단</p>{items}</div>",
+        f"<div class='student-list-box'><p>❤️학생 명단</p>{items}</div>",
         unsafe_allow_html=True
     )
     st.markdown("<br>", unsafe_allow_html=True)
